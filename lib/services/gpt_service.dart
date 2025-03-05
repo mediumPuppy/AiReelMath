@@ -114,13 +114,15 @@ class GptService {
     }
   }
 
-  Future<Map<String, dynamic>> sendPrompt(String topic) async {
+  Future<Map<String, dynamic>> sendPrompt(String topic, {String? gradeLevel, String? learningPath}) async {
     try {
-      // First, get the layout description based on the topic
+      // First, get the layout description based on the topic and grade level
       final layoutPrompt =
           '''You are helping us pre-generate the exact shape arrangement and teaching content for a CustomPainter-based educational video lesson.
 
 Topic: $topic
+${gradeLevel != null ? 'Grade Level: $gradeLevel' : ''}
+${learningPath != null ? 'Learning Path: $learningPath' : ''}
 
 ⚠️ SCREEN SIZE CONSTRAINTS ⚠️
 You are designing for a SMALL PHONE SCREEN that is exactly 320 pixels wide × 568 pixels tall.
@@ -139,19 +141,49 @@ IMPORTANT:
 
 Your goal is to teach through CONCRETE examples using simple numbers, basic shapes, and concise text that will fit on a small phone screen.
 
-Return a concise description of the final drawing we want and the teaching script. Include:
-1. Specific math concept with NUMBERS and CONCRETE examples (not abstract meta-learning)
-2. List of SIMPLE shapes with approximate coordinates, colors, and short labeling ideas
-3. 2-3 BRIEF sentence teaching script that demonstrates solving a simple math problem
-4. Remember all content must fit on a 320×568 pixel screen with enough spacing
+DETAILED PLANNING:
+1. Choose a specific, age-appropriate math lesson based on the grade level and learning path
+2. Decide exactly what to teach and what real-world example will illustrate it best
+3. Plan a detailed, step-by-step teaching approach with 4 key sections (one for each screen section)
+4. Think about what shapes and visuals will best communicate the concept
+5. Plan exact teaching points with specific numbers for each part of the lesson
+6. Define the coordinates where each shape and label should appear (ensuring nothing goes beyond x=310)
+7. Design a clear progression: introduction → explanation → example → practice/recap
 
-Output as a simple JSON with "layoutDescription" and "teachingFocus" fields only. No additional text or commentary.''';
+Return a comprehensive teaching and drawing plan as a JSON with these fields:
+- "lessonTopic": The specific math concept being taught (age-appropriate for grade level)
+- "targetAudience": Age range and grade level this is designed for
+- "teachingApproach": Step-by-step explanation of the teaching method
+- "keyPoints": 2-3 main points to convey in simple terms
+- "visualElements": Array of planned visual elements with approximate coordinates, colors, and sizes
+- "teachingScript": Concise script with 4 sections matching the 4 screen sections
+- "spatialPlan": Layout guidelines including exact positioning and sizing of elements
+- "examples": Specific numerical examples to use with calculated answers
+- "conceptualProgression": How to build understanding step by step
+
+Output as a JSON with all these fields structured to provide maximum guidance to the next prompt. No additional text or commentary.''';
 
       final layoutDescription = await _getLayoutDescription(layoutPrompt);
-
-      // Now use the layout description for the main drawing prompt
       final drawingPrompt =
-          '''Your topic is ${layoutDescription['layoutDescription']}
+          '''Your topic is ${layoutDescription['lessonTopic'] ?? layoutDescription['layoutDescription']}
+
+TEACHING PLAN:
+${layoutDescription['teachingApproach'] ?? ''}
+
+KEY POINTS:
+${layoutDescription['keyPoints']?.join('\n') ?? ''}
+
+VISUAL ELEMENTS:
+${layoutDescription['visualElements'] != null ? jsonEncode(layoutDescription['visualElements']) : ''}
+
+SPATIAL PLAN:
+${layoutDescription['spatialPlan'] ?? ''}
+
+EXAMPLES:
+${layoutDescription['examples'] != null ? jsonEncode(layoutDescription['examples']) : ''}
+
+TEACHING SCRIPT (4 sections):
+${layoutDescription['teachingScript'] ?? ''}
 
 ⚠️ X-COORDINATE BOUNDARY WARNING ⚠️
 You are drawing on a phone screen that is EXACTLY 320 pixels wide by 568 pixels tall.
@@ -354,7 +386,7 @@ Now produce the JSON instructions that depict the concept of YOUR_TOPIC_HERE in 
               ],
             ),
           ],
-          temperature: 0.7, // Lowered for more precise spatial planning
+          temperature: 0.5, // Lowered for more precise spatial planning
           maxTokens: 2000,
         );
         final jsonStr =
@@ -370,7 +402,7 @@ Now produce the JSON instructions that depict the concept of YOUR_TOPIC_HERE in 
               ]
             }
           ],
-          "generationConfig": {"temperature": 0.7, "topP": 0.9, "topK": 20} // Lower temperature for more precise spatial planning
+          "generationConfig": {"temperature": 0.5, "topP": 0.9, "topK": 20} // Lower temperature for more precise spatial planning
         };
 
         final uri = Uri.parse(_geminiEndpoint)
@@ -513,6 +545,8 @@ Do not include any other text or explanation in your response.''';
   Future<Quiz?> generateQuizFromTopics({
     required List<String> topics,
     required DifficultyLevel difficulty,
+    String? gradeLevel,
+    String? learningPath,
     int questionCount = 5,
   }) async {
     try {
@@ -569,6 +603,8 @@ VARIETY REQUIREMENTS:
 
 Topics to cover: ${topics.join(", ")}
 Difficulty Level: ${difficulty.name}
+${gradeLevel != null ? 'Grade Level: $gradeLevel' : ''}
+${learningPath != null ? 'Learning Path: $learningPath' : ''}
 Number of questions: $questionCount
 
 Additional Guidelines:
@@ -590,7 +626,17 @@ Additional Guidelines:
 Output ONLY the JSON object.''';
 
       final systemPrompt =
-          '''You are a creative math quiz generator. Your goal is to create highly varied, unique questions that test the same concepts in different ways. Never repeat patterns or numbers.
+          '''You are a creative, age-appropriate math quiz generator. Your goal is to create highly varied, unique questions that test math concepts in different ways while maintaining educational value. Never repeat patterns or numbers between questions.
+
+IMPORTANT AGE-APPROPRIATE GUIDELINES:
+1. If a grade level is specified, tailor questions to be challenging but appropriate for that grade
+2. Choose topics that align with the specified learning path (if provided)
+3. For kindergarten: Use counting, simple shapes, basic addition with numbers 1-10
+4. For 1st grade: Addition/subtraction within 20, telling time to the hour
+5. For 2nd grade: Addition/subtraction within 100, simple money problems
+6. For 3rd grade: Multiplication/division within 100, fractions with like denominators
+7. For 4th grade: Multi-digit arithmetic, area/perimeter, fractions with unlike denominators
+8. For 5th grade: Decimals, volume, coordinate planes, operations with fractions
 
 $prompt''';
 
@@ -607,7 +653,7 @@ $prompt''';
               ],
             ),
           ],
-          temperature: 1.7, // Increased from 0.7 for more randomness
+          temperature: 1.3, // Adjusted for creativity while maintaining relevance
           maxTokens: 2000,
         );
 
@@ -623,7 +669,7 @@ $prompt''';
               ]
             }
           ],
-          "generationConfig": {"temperature": 1.7, "topP": 0.8, "topK": 40}
+          "generationConfig": {"temperature": 1.3, "topP": 0.8, "topK": 40}
         };
 
         final uri = Uri.parse(_geminiEndpoint)
