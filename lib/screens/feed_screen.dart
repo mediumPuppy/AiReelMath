@@ -275,24 +275,53 @@ class _FeedScreenState extends State<FeedScreen>
       return;
     }
 
-    // Capture current topic
-    final String? topic = "basic multiplication";
-    if (topic == null) {
-      print('[CreateVideo] ERROR: No topic selected');
-      return;
-    }
-    print('[CreateVideo] Creating video for topic: $topic');
-
     try {
       // Show loading indicator
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Creating new video...")),
       );
 
+      // Get the current topic info based on the learning path
+      final topicInfo =
+          await _firestoreService.getCurrentTopicInfo(_selectedLearningPath!);
+      if (topicInfo == null) {
+        print('[CreateVideo] ERROR: No topics found for learning path');
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+              content: Text("No topics found for this learning path")),
+        );
+        return;
+      }
+
+      final String topicId = topicInfo['id'] as String;
+      final String topicTitle = topicInfo['title'] as String;
+      final String topicDescription = topicInfo['description'] as String;
+      final String subject = topicInfo['subject'] as String;
+
+      print('[CreateVideo] Creating video for topic: $topicTitle ($topicId)');
+
+      // Generate prompt from topic information
+      final String prompt =
+          '''Create an educational video that teaches $topicTitle using SPECIFIC NUMBERS and CONCRETE EXAMPLES.
+      
+Topic description: $topicDescription
+
+Subject: $subject
+Learning path: ${_selectedLearningPath!}
+
+IMPORTANT REQUIREMENTS:
+1. Create a K-5 math lesson that teaches with ACTUAL NUMBERS and REAL MATH PROBLEMS
+2. DO NOT create abstract lessons about "multiple approaches" or "perseverance in problem-solving"
+3. DO show step-by-step solving of SPECIFIC math problems with definite numerical answers 
+4. Use age-appropriate examples with actual equations, numbers, or operations
+5. Focus on teaching the math directly through concrete examples, not through meta-lessons about thinking strategies
+
+Example: Instead of "Remember to try different approaches when solving problems", show "5 + 3 = 8" or "If Amy has 7 apples and gives 2 away, she has 5 apples left."''';
+
       // Step 1: Generate the video content
-      print('[CreateVideo] Calling GPT service...');
+      print('[CreateVideo] Calling GPT service with prompt: $prompt');
       final Map<String, dynamic> videoJson =
-          await _gptService.sendPrompt(topic);
+          await _gptService.sendPrompt(prompt);
       print('[CreateVideo] Received response from GPT service');
 
       // Step 2: Generate title and description based on the content
@@ -300,19 +329,24 @@ class _FeedScreenState extends State<FeedScreen>
       final metadata = await _gptService.generateVideoMetadata(videoJson);
       print('[CreateVideo] Generated metadata: $metadata');
 
-      // Step 3: Create video with AI-generated title/description and manually set fields
+      // Step 3: Create video with AI-generated title/description and topic information
       print('[CreateVideo] Creating VideoFeed object');
+
+      // Get count of existing videos for this topic to determine order
+      final existingVideos =
+          await _firestoreService.getVideosByTopic(topicId).first;
+      final int orderInPath = existingVideos.docs.length + 1;
+
       final newVideo = VideoFeed(
         id: generateUniqueId(),
         title: metadata['title']!,
-        topicId: "equations", // Manually set - should come from UI selection
-        subject: "algebra", // Manually set - should come from UI selection
-        skillLevel:
-            "beginner", // Manually set - should come from UI/system setting
+        topicId: topicId,
+        subject: subject,
+        skillLevel: "beginner",
         prerequisites: [],
         description: metadata['description']!,
         learningPathId: _selectedLearningPath!,
-        orderInPath: 0,
+        orderInPath: orderInPath,
         estimatedMinutes: 5,
         hasQuiz: false,
         videoUrl: "",
@@ -334,7 +368,9 @@ class _FeedScreenState extends State<FeedScreen>
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("New video created successfully!")),
+          SnackBar(
+              content: Text(
+                  "New video created successfully for topic: $topicTitle")),
         );
       }
     } catch (e, stackTrace) {

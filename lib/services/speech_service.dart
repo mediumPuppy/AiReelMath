@@ -12,7 +12,8 @@ class SpeechService {
   bool _isInitialized = false;
   String? get _apiKey => dotenv.env['ELEVEN_LABS_API_KEY'];
   static const String _baseUrl = 'https://api.elevenlabs.io/v1';
-  static const String _defaultVoiceId = 'pNInz6obpgDQGcFmaJgB'; // Adam voice
+  static const String _defaultVoiceId =
+      'IKne3meq5aSn9XLyUdCD'; // Meditation Lady voice
   File? _currentAudioFile;
   String? _selectedModelId;
   final Map<String, String> _audioCache = {};

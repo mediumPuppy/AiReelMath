@@ -423,6 +423,58 @@ class FirestoreService {
         .snapshots()
         .map((snapshot) => snapshot.data()?['selectedTopic'] as String?);
   }
+  
+  Future<Map<String, dynamic>?> getCurrentTopicInfo(String learningPathId) async {
+    try {
+      // Get all topics for this learning path
+      final topicsQuery = await _db
+          .collection('topics')
+          .where('learningPathId', isEqualTo: learningPathId)
+          .orderBy('orderIndex')
+          .get();
+      
+      // User progress tracking
+      String userId = FirebaseAuth.instance.currentUser?.uid ?? '';
+      if (userId.isEmpty) return null;
+      
+      // Get completed topics for this user
+      final userProgressDoc = await _db.collection('user_progress').doc(userId).get();
+      final completedTopics = (userProgressDoc.data()?['topicsCompleted'] as Map<String, dynamic>? ?? {})
+          .keys
+          .toSet();
+      
+      // Find the first incomplete topic (current topic)
+      for (final topicDoc in topicsQuery.docs) {
+        final topicId = topicDoc.id;
+        if (!completedTopics.contains(topicId)) {
+          return {
+            'id': topicId,
+            'title': topicDoc.data()['title'] as String? ?? '',
+            'description': topicDoc.data()['description'] as String? ?? '',
+            'subject': topicDoc.data()['subject'] as String? ?? '',
+            'learningPathId': learningPathId,
+          };
+        }
+      }
+      
+      // If all topics are completed, return the last one
+      if (topicsQuery.docs.isNotEmpty) {
+        final lastTopic = topicsQuery.docs.last;
+        return {
+          'id': lastTopic.id,
+          'title': lastTopic.data()['title'] as String? ?? '',
+          'description': lastTopic.data()['description'] as String? ?? '',
+          'subject': lastTopic.data()['subject'] as String? ?? '',
+          'learningPathId': learningPathId,
+        };
+      }
+      
+      return null;
+    } catch (e) {
+      debugPrint('Error getting current topic: $e');
+      return null;
+    }
+  }
 
   Future<void> markTopicAsCompleted(String userId, String topicId) async {
     // Update the completedTopics array
@@ -470,22 +522,47 @@ class FirestoreService {
   }
 
   // Initialization Methods
-  Future<void> initializeSampleData() async {
-    debugPrint('Starting sample data initialization...');
-
-    // Clear existing videos only
-    debugPrint('Clearing existing videos...');
-    final batch = _db.batch();
-
+  Future<void> clearExistingData() async {
+    debugPrint('Starting data cleanup...');
+    
+    // Use separate batches to avoid exceeding batch size limits
+    final videosBatch = _db.batch();
+    final topicsBatch = _db.batch();
+    final learningPathsBatch = _db.batch();
+    
     // Clear videos
+    debugPrint('Clearing existing videos...');
     final existingVideos = await _db.collection('videos').get();
     for (final doc in existingVideos.docs) {
-      batch.delete(doc.reference);
+      videosBatch.delete(doc.reference);
     }
+    await videosBatch.commit();
+    debugPrint('Existing videos cleared: ${existingVideos.docs.length} videos');
+    
+    // Clear topics
+    debugPrint('Clearing existing topics...');
+    final existingTopics = await _db.collection('topics').get();
+    for (final doc in existingTopics.docs) {
+      topicsBatch.delete(doc.reference);
+    }
+    await topicsBatch.commit();
+    debugPrint('Existing topics cleared: ${existingTopics.docs.length} topics');
+    
+    // Clear learning paths
+    debugPrint('Clearing existing learning paths...');
+    final existingPaths = await _db.collection('learning_paths').get();
+    for (final doc in existingPaths.docs) {
+      learningPathsBatch.delete(doc.reference);
+    }
+    await learningPathsBatch.commit();
+    debugPrint('Existing learning paths cleared: ${existingPaths.docs.length} learning paths');
+    
+    debugPrint('Data cleanup complete');
+  }
 
-    await batch.commit();
-    debugPrint('Existing videos cleared');
-
+  Future<void> initializeSampleData() async {
+    debugPrint('Starting sample data initialization...');
+    
     debugPrint('Initializing videos...');
 
     // Add sample videos directly with their topic IDs
@@ -495,6 +572,14 @@ class FirestoreService {
       // Convert DateTime to Timestamp for Firestore
       videoData['createdAt'] =
           Timestamp.fromDate(videoData['createdAt'] as DateTime);
+      
+      // Ensure videoJson is properly formatted to enable rendering
+      if (videoData['videoJson'] == null || (videoData['videoJson'] is Map && videoData['videoJson'].isEmpty)) {
+        // Use the geometry drawing spec for videoJson
+        final Map<String, dynamic> videoJsonData = 
+            jsonDecode(geometryDrawingSpec) as Map<String, dynamic>;
+        videoData['videoJson'] = videoJsonData;
+      }
 
       await _db.collection('videos').add(videoData);
       debugPrint(
@@ -896,13 +981,17 @@ class FirestoreService {
 
   Future<void> addCurriculumData(Map<String, dynamic> curriculumData) async {
     try {
+      debugPrint('Processing curriculum data...');
       final curriculum = curriculumData['curriculum'] as List<dynamic>;
-
+      final Map<String, List<String>> pathTopics = {}; // Track topics per learning path
+      
+      // First pass: Create learning paths
       for (final yearData in curriculum) {
         final year = yearData['year'] as String;
         final subject = yearData['subject'] as String;
-        final learningPathId =
-            '$year-$subject'.replaceAll(' ', '-').toLowerCase();
+        final learningPathId = '$year-$subject'.replaceAll(' ', '-').toLowerCase();
+        
+        pathTopics[learningPathId] = []; // Initialize topic list for this path
 
         // Create learning path with all required fields
         await _db.collection('learning_paths').doc(learningPathId).set({
@@ -917,89 +1006,245 @@ class FirestoreService {
           'thumbnail': '',
           'totalVideos': 0,
         });
-
+        
+        debugPrint('Created learning path: $learningPathId');
+      }
+      
+      // Second pass: Create topics with proper relationships
+      for (final yearData in curriculum) {
+        final year = yearData['year'] as String;
+        final subject = yearData['subject'] as String;
+        final learningPathId = '$year-$subject'.replaceAll(' ', '-').toLowerCase();
+        
         // Add topics (standards) to the main topics collection
         final strands = yearData['strands'] as List<dynamic>;
         int orderIndex = 1; // Start at 1 and increment for each topic
 
         for (final strandData in strands) {
+          final strandName = strandData['strandName'] as String;
           final standards = strandData['standards'] as List<dynamic>;
+          
+          debugPrint('Processing strand: $strandName with ${standards.length} standards');
+          
           for (final standardData in standards) {
             final standardId = standardData['id'] as String;
             final topicId = standardId.toLowerCase();
-            final topicTitle =
-                standardData['description'].toString().split('.').first;
+            // Take first sentence as title (or full text if no period)
+            final String description = standardData['description'] as String;
+            final topicTitle = description.split('.').first.trim();
 
-            // Check if the topic already exists
-            final topicDoc = await _db.collection('topics').doc(topicId).get();
+            // Track this topic as belonging to this learning path
+            pathTopics[learningPathId]?.add(topicId);
 
-            if (!topicDoc.exists) {
-              // If the topic doesn't exist, create it with sequential orderIndex
-              await _db.collection('topics').doc(topicId).set({
-                'id': topicId,
-                'title': topicTitle,
-                'description': standardData['description'] as String,
-                'difficulty': 'beginner',
-                'subject': subject.toLowerCase(),
-                'prerequisites': [],
-                'thumbnail': '',
-                'orderIndex': orderIndex, // Use the sequential order
-                'learningPathId': learningPathId,
-              });
-              orderIndex++; // Increment for next topic
-            }
+            // Create the topic document with proper metadata
+            await _db.collection('topics').doc(topicId).set({
+              'id': topicId,
+              'title': topicTitle,
+              'description': description,
+              'difficulty': 'beginner',
+              'subject': subject.toLowerCase(),
+              'prerequisites': [],
+              'thumbnail': '',
+              'orderIndex': orderIndex, // Use the sequential order
+              'learningPathId': learningPathId,
+              'strandName': strandName,
+              'standardId': standardId,
+            });
+            
+            debugPrint('Created topic: $topicId (order: $orderIndex) in path: $learningPathId');
+            orderIndex++; // Increment for next topic
           }
         }
+        
+        // Update the learning path with topic count
+        final topicCount = pathTopics[learningPathId]?.length ?? 0;
+        await _db.collection('learning_paths').doc(learningPathId).update({
+          'totalTopics': topicCount,
+        });
+        
+        debugPrint('Updated learning path $learningPathId with $topicCount topics');
       }
 
-      print('Curriculum data added successfully!');
+      debugPrint('Curriculum data added successfully!');
     } catch (e) {
-      print('Error adding curriculum data: $e');
+      debugPrint('Error adding curriculum data: $e');
       rethrow;
     }
   }
 
   Future<void> initializeCurriculumData() async {
     try {
-      // Check if curriculum data already exists
-      final existingPaths = await _db.collection('learning_paths').get();
-      if (existingPaths.docs.isNotEmpty) {
-        print('Curriculum data already exists');
-        return;
-      }
-
+      debugPrint('Starting curriculum data initialization...');
+      
       // Load and parse curriculum data from assets
       final jsonString = await rootBundle.loadString('assets/curriculum.json');
       final curriculumData = jsonDecode(jsonString);
 
+      // First add the curriculum structure (learning paths and topics)
       await addCurriculumData(curriculumData);
+      debugPrint('Curriculum structure initialized successfully!');
+      
+      // Then add the sample videos with properly formatted videoJson
       await initializeSampleVideos();
-      print('Curriculum data and sample videos initialized successfully!');
+      debugPrint('Sample videos initialized successfully!');
+      
+      // Wait a moment to ensure all data is committed
+      await Future.delayed(Duration(seconds: 1));
+      
+      debugPrint('Curriculum data initialization complete!');
     } catch (e) {
-      print('Error initializing curriculum data: $e');
+      debugPrint('Error initializing curriculum data: $e');
+      rethrow; // Rethrow to allow the UI to show the error
     }
   }
 
   Future<void> initializeSampleVideos() async {
-    debugPrint('Checking for existing videos...');
-    final videosSnapshot = await _db.collection('videos').get();
-    if (videosSnapshot.docs.isNotEmpty) {
-      debugPrint('Videos already exist, skipping initialization');
-      return;
-    }
-
     debugPrint('Initializing sample videos...');
-    for (final videoData in sampleVideos) {
-      // Use the geometry drawing spec for videoJson
-      final Map<String, dynamic> videoJsonData =
-          jsonDecode(geometryDrawingSpec) as Map<String, dynamic>;
-
-      videoData['videoJson'] = videoJsonData;
-      videoData['createdAt'] = FieldValue.serverTimestamp();
-
-      await _db.collection('videos').doc(videoData['id']).set(videoData);
-      debugPrint('Added video: ${videoData['title']}');
+    
+    // Parse the geometry drawing spec once outside the loop
+    final Map<String, dynamic> baseVideoJsonData = 
+        jsonDecode(geometryDrawingSpec) as Map<String, dynamic>;
+    
+    // First, get all learning paths to make sure we assign videos to valid paths
+    final pathsSnapshot = await _db.collection('learning_paths').get();
+    final Map<String, String> validPaths = {};
+    for (final doc in pathsSnapshot.docs) {
+      final data = doc.data();
+      validPaths[doc.id] = data['title'] as String? ?? doc.id;
     }
+    
+    // Get topics to ensure we can assign videos to valid topics
+    final topicsSnapshot = await _db.collection('topics').get();
+    final Map<String, Map<String, dynamic>> validTopics = {};
+    for (final doc in topicsSnapshot.docs) {
+      validTopics[doc.id] = doc.data();
+    }
+    
+    debugPrint('Found ${validPaths.length} learning paths and ${validTopics.length} topics');
+    
+    // Process each sample video and ensure consistent structure
+    for (final videoData in sampleVideos) {
+      try {
+        // Create a deep copy to avoid modifying the original sample data
+        final processedVideo = Map<String, dynamic>.from(videoData);
+        
+        // Create unique video JSON for each video to avoid sharing references
+        final Map<String, dynamic> videoJsonData = 
+            Map<String, dynamic>.from(baseVideoJsonData);
+            
+        // Customize some aspects of the drawing for each video to make them unique
+        if (videoJsonData.containsKey('instructions') && 
+            videoJsonData['instructions'].containsKey('speech')) {
+          // Customize the speech script based on video title
+          videoJsonData['instructions']['speech']['script'] = 
+              "In this video about ${processedVideo['title']}, we'll explore " +
+              "key concepts related to ${processedVideo['description']}";
+        }
+        
+        // Add video-specific timing if instructions exist
+        if (videoJsonData.containsKey('instructions') && 
+            videoJsonData['instructions'].containsKey('timing')) {
+          // Adjust the timing for this specific video
+          final List<dynamic> timing = videoJsonData['instructions']['timing'];
+          if (timing.isNotEmpty) {
+            // Adjust end times to match estimated minutes
+            final double totalMinutes = (processedVideo['estimatedMinutes'] as int).toDouble();
+            final int totalSeconds = (totalMinutes * 60).round();
+            
+            // Create timing stages proportionally
+            final int stageCount = timing.length;
+            for (int i = 0; i < stageCount; i++) {
+              // Calculate proportional end time
+              final double proportion = (i + 1) / stageCount;
+              final double endTime = totalSeconds * proportion;
+              timing[i]['endTime'] = endTime;
+              
+              // If not the first stage, set startTime to previous endTime
+              if (i > 0) {
+                timing[i]['startTime'] = timing[i-1]['endTime'];
+              }
+            }
+          }
+        }
+        
+        // Set the properly formatted videoJson
+        processedVideo['videoJson'] = videoJsonData;
+        
+        // Ensure we have a timestamp for createdAt
+        processedVideo['createdAt'] = FieldValue.serverTimestamp();
+        
+        // Make sure video has an ID
+        final String videoId = processedVideo['id'] ?? DateTime.now().millisecondsSinceEpoch.toString();
+        
+        // Verify and assign to valid learning path
+        String learningPathId = processedVideo['learningPathId'] as String? ?? '';
+        if (!validPaths.containsKey(learningPathId)) {
+          // Try to find a matching path or assign to first available one
+          final String topicId = processedVideo['topicId'] as String? ?? '';
+          if (validTopics.containsKey(topicId)) {
+            learningPathId = validTopics[topicId]?['learningPathId'] as String? ?? '';
+          }
+          
+          // If still no valid path, use the first one available
+          if (!validPaths.containsKey(learningPathId) && validPaths.isNotEmpty) {
+            learningPathId = validPaths.keys.first;
+          }
+          
+          processedVideo['learningPathId'] = learningPathId;
+          debugPrint('Reassigned video ${processedVideo['title']} to learning path: $learningPathId');
+        }
+        
+        // Verify and assign to valid topic
+        String topicId = processedVideo['topicId'] as String? ?? '';
+        if (!validTopics.containsKey(topicId)) {
+          // Find a topic in the assigned learning path
+          final matchingTopics = validTopics.entries
+              .where((entry) => entry.value['learningPathId'] == learningPathId)
+              .toList();
+          
+          if (matchingTopics.isNotEmpty) {
+            topicId = matchingTopics.first.key;
+            processedVideo['topicId'] = topicId;
+            debugPrint('Reassigned video ${processedVideo['title']} to topic: $topicId');
+          }
+        }
+        
+        // Handle empty topics list
+        if (!processedVideo.containsKey('topics') || processedVideo['topics'] == null) {
+          processedVideo['topics'] = [topicId];
+        }
+        
+        // Ensure prerequisites is a list
+        if (!processedVideo.containsKey('prerequisites') || processedVideo['prerequisites'] == null) {
+          processedVideo['prerequisites'] = [];
+        }
+        
+        // Set appropriate order in path
+        if (!processedVideo.containsKey('orderInPath') || processedVideo['orderInPath'] == null) {
+          // Check existing video count for this topic to determine order
+          final existingVideos = await _db.collection('videos')
+              .where('topicId', isEqualTo: topicId)
+              .count()
+              .get();
+          
+          processedVideo['orderInPath'] = (existingVideos.count ?? 0) + 1;
+        }
+        
+        // Save to Firestore with the ID
+        await _db.collection('videos').doc(videoId).set(processedVideo);
+        debugPrint('Added video: ${processedVideo['title']} (ID: $videoId)');
+        
+        // Update the video count in the learning path
+        if (validPaths.containsKey(learningPathId)) {
+          await _db.collection('learning_paths').doc(learningPathId).update({
+            'totalVideos': FieldValue.increment(1)
+          });
+        }
+      } catch (e) {
+        debugPrint('Error adding video: $e');
+      }
+    }
+    
     debugPrint('Sample videos initialized successfully!');
   }
 }

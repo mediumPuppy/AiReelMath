@@ -150,8 +150,23 @@ class _LearningPathsScreenState extends State<LearningPathsScreen> {
     });
 
     try {
-      await _firestoreService.initializeSampleData();
+      // Clear existing data first (learning paths, topics, and videos)
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Clearing existing data...')),
+      );
+      await _firestoreService.clearExistingData();
+      
+      // Re-initialize with fresh data
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Uploading new data...')),
+      );
+      
+      // Initialize curriculum data (includes learning paths and topics)
       await _firestoreService.initializeCurriculumData();
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Data refresh complete!')),
+      );
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

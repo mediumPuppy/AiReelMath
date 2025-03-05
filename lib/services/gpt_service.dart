@@ -115,16 +115,26 @@ class GptService {
 
   Future<Map<String, dynamic>> sendPrompt(String topic) async {
     try {
-      // First, get the layout description
+      // First, get the layout description based on the topic
       final layoutPrompt =
-          '''You are helping us pre-generate the exact shape arrangement and teaching content for a CustomPainter-based math video lesson.
+          '''You are helping us pre-generate the exact shape arrangement and teaching content for a CustomPainter-based educational video lesson.
 
 Topic: $topic
 
+This topic is part of a K-5 math curriculum. Create content that uses SPECIFIC, CONCRETE math examples - not abstract meta-lessons about learning.
+
+IMPORTANT:
+1. DO NOT create videos that teach abstract concepts like "perseverance" or "problem-solving steps"
+2. DO create videos that teach actual math with specific numbers, equations, and concrete examples
+3. AVOID phrases like "Let's try option A... Now let's try option B" or "Remember to persevere"
+4. INSTEAD use real math problems like "If Sarah has 5 apples and gives 2 to John, how many does she have left?"
+
+Your goal is to teach through CONCRETE examples using numbers, shapes, and mathematical operations that are directly applicable.
+
 Return a concise description of the final drawing we want and the teaching script. Include:
-1. The concept/topic description
+1. Specific math concept with NUMBERS and CONCRETE examples (not abstract meta-learning)
 2. List of shapes with approximate coordinates, colors, and labeling ideas
-3. 2-3 sentence teaching script summary
+3. 2-3 sentence teaching script summary that demonstrates solving an actual math problem
 
 Output as a simple JSON with "layoutDescription" and "teachingFocus" fields only. No additional text or commentary.''';
 
@@ -133,6 +143,15 @@ Output as a simple JSON with "layoutDescription" and "teachingFocus" fields only
       // Now use the layout description for the main drawing prompt
       final drawingPrompt =
           '''Your topic is ${layoutDescription['layoutDescription']}
+
+CRITICALLY IMPORTANT: Create a lesson that teaches ACTUAL MATH with SPECIFIC NUMBERS and CONCRETE EXAMPLES. 
+DO NOT create abstract meta-lessons about "how to solve problems" or "multiple ways to think about math."
+
+For K-5 math students:
+1. Use SPECIFIC NUMBERS and CONCRETE EXAMPLES - work through actual math problems 
+2. Show step-by-step solving of real math equations or problems with definite answers
+3. Use colorful, meaningful visuals that directly relate to the specific math being taught
+4. Avoid abstract lessons about perseverance, problem-solving approaches, or thinking strategies
 
 You are an AI that generates perfect JSON output (with no additional text or explanations) to instruct Flutter's CustomPainter on how to draw and label mathematical concepts in a context-aware manner. Follow these rules precisely:
 1. JSON-Only Output Your response must be a single, valid JSON object. It must contain no extra text, commentary, or Markdown formatting. Do not wrap it in triple backticks, do not provide any explanation—only the JSON.
@@ -234,7 +253,14 @@ You are an AI that outputs a single JSON object with instructions for Flutter's 
    - Be aware that each letter is about 35px high and 20 px wide. Take this into consideration when calculating vertical and horizontal space.
 
 6) Provide a "speech" object with:
-   - "script" explaining the concept
+   - "script" explaining a CONCRETE math problem with SPECIFIC NUMBERS:
+     * Use a SPECIFIC, REAL math problem with definite numerical answers (not abstract concepts)
+     * Include actual NUMBERS, EQUATIONS, or MATHEMATICAL OPERATIONS
+     * Show how to solve this specific problem step-by-step
+     * Use simple words a K-5 student would understand
+     * Be enthusiastic but FOCUS ON THE ACTUAL MATH, not abstract meta-lessons
+     * Avoid phrases like "Let's try option A... Now let's try option B"
+     * Do not teach about perseverance, multiple approaches, or general problem-solving
    - "pacing" with "initialDelay", "betweenStages", and "finalDelay"
 
 8) No LaTeX or slashes in labels. Use plain text or Unicode symbols for geometry (e.g., ΔABC, ∠A, "Line XY," etc.). Do not produce strings like \\\$\\triangle\\\$ or \\\$\\angle A\\\$.
@@ -322,7 +348,7 @@ Now produce the JSON instructions that depict the concept of YOUR_TOPIC_HERE in 
           .join('\n');
 
       final prompt =
-          '''Analyze this math lesson content and generate a title and description.
+          '''Analyze this math lesson content and generate a kid-friendly title and description that focuses on SPECIFIC MATH CONTENT.
 The content includes:
 
 VISUAL STEPS:
@@ -332,8 +358,11 @@ EXPLANATION:
 $script
 
 REQUIREMENTS:
-1. Title: Create a clear, specific title focusing on the mathematical concept (max 30 chars)
-2. Description: Write an exact description explaining what will be learned (max 75 chars)
+1. Title: Create a fun, specific title that mentions the ACTUAL MATH being taught (max 30 chars)
+2. Description: Focus on the SPECIFIC math problem or concept with actual numbers (max 75 chars)
+3. Ensure both title and description refer to concrete math operations or numbers
+4. Avoid abstract concepts like "multiple approaches" or "perseverance"
+5. Make it clear what SPECIFIC math skill students will learn
 
 Format your response as a JSON object with exactly these fields:
 {
