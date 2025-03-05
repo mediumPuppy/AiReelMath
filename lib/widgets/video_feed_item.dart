@@ -11,6 +11,7 @@ import '../widgets/geometry_drawing_painter.dart';
 import '../models/drawing_spec_models.dart';
 import '../utils/handwriting_util.dart';
 import '../services/speech_service.dart';
+import 'dart:convert';
 
 class VideoFeedItem extends StatefulWidget {
   final int index;
@@ -72,6 +73,8 @@ class _VideoFeedItemState extends State<VideoFeedItem>
   @override
   void initState() {
     super.initState();
+    debugPrint(
+        '[VideoFeedItem] Initializing with video JSON: ${jsonEncode(widget.feed.videoJson)}');
     _jsonController = JsonVideoController(videoJson: widget.feed.videoJson);
     _initializeJsonVideo();
     _innerScrollController = ScrollController();
@@ -85,13 +88,14 @@ class _VideoFeedItemState extends State<VideoFeedItem>
 
     // Add listener to track animation completion
     _animationController.addStatusListener((status) {
-      print('Animation status changed to: $status');
+      debugPrint('[VideoFeedItem] Animation status changed to: $status');
       if (status == AnimationStatus.completed && mounted) {
-        print('Video completed! Checking audio state...');
+        debugPrint('[VideoFeedItem] Video completed! Checking audio state...');
         setState(() {
           // Only set fully complete if speech is also done
           if (!_isSpeaking) {
-            print('Audio already complete - showing restart button');
+            debugPrint(
+                '[VideoFeedItem] Audio already complete - showing restart button');
             _isFullyComplete = true;
           }
         });
@@ -133,11 +137,18 @@ class _VideoFeedItemState extends State<VideoFeedItem>
   }
 
   Future<void> _initializeJsonVideo() async {
-    await _jsonController.initialize();
-    if (!mounted) return;
-    setState(() {
-      _isInitialized = _jsonController.isInitialized;
-    });
+    debugPrint('[VideoFeedItem] Initializing JSON video...');
+    try {
+      await _jsonController.initialize();
+      if (!mounted) return;
+      setState(() {
+        _isInitialized = _jsonController.isInitialized;
+      });
+      debugPrint('[VideoFeedItem] JSON video initialized: $_isInitialized');
+    } catch (e, stackTrace) {
+      debugPrint('[VideoFeedItem] Error initializing JSON video: $e');
+      debugPrint('[VideoFeedItem] Stack trace: $stackTrace');
+    }
   }
 
   void _handleLike() {
@@ -304,8 +315,8 @@ class _VideoFeedItemState extends State<VideoFeedItem>
 
   @override
   Widget build(BuildContext context) {
-    print(
-        'Build called. Animation: ${_animationController.status}, Speaking: $_isSpeaking, FullyComplete: $_isFullyComplete');
+    debugPrint(
+        '[VideoFeedItem] Build called. Animation: ${_animationController.status}, Speaking: $_isSpeaking, FullyComplete: $_isFullyComplete');
     final firestoreService = FirestoreService();
 
     return GestureDetector(
@@ -317,9 +328,31 @@ class _VideoFeedItemState extends State<VideoFeedItem>
             animation: _animationController,
             builder: (context, child) {
               final currentTime = _animationController.value *
-                  widget
-                      .feed.videoJson['instructions']['timing'].last['endTime']
-                      .toDouble();
+                      widget.feed.videoJson['instructions']?['timing']
+                          ?.last['endTime']
+                          ?.toDouble() ??
+                  10.0;
+
+              debugPrint(
+                  '[VideoFeedItem] Current animation time: $currentTime');
+
+              final instructions = widget.feed.videoJson['instructions'];
+              final drawing = instructions?['drawing'];
+
+              if (instructions == null) {
+                debugPrint(
+                    '[VideoFeedItem] ERROR: Missing instructions in videoJson');
+                return Container(
+                    color: Colors.red[100]); // Visual error indicator
+              }
+
+              if (drawing == null) {
+                debugPrint(
+                    '[VideoFeedItem] ERROR: Missing drawing section in instructions');
+                return Container(
+                    color: Colors.yellow[100]); // Visual error indicator
+              }
+
               return Container(
                 color: Colors.white,
                 child: NotificationListener<ScrollNotification>(
@@ -371,68 +404,78 @@ class _VideoFeedItemState extends State<VideoFeedItem>
                     painter: GeometryDrawingPainter(
                       currentTime: currentTime,
                       specification: GeometryDrawingSpec(
-                        stages: List<DrawingStage>.from(widget
-                            .feed.videoJson['instructions']['timing']
-                            .map((stage) => DrawingStage(
-                                  stage: stage['stage'],
-                                  startTime:
-                                      (stage['startTime'] as num).toDouble(),
-                                  endTime: (stage['endTime'] as num).toDouble(),
-                                  description: stage['description'],
-                                  easing: stage['easing'],
-                                ))),
-                        shapes: List<GeometryShape>.from(widget
-                            .feed.videoJson['instructions']['drawing']['shapes']
-                            .map((shape) => GeometryShape(
-                                  id: shape['id'],
-                                  vertices: shape['vertices']
-                                          ?.map<Offset>((v) => Offset(
-                                              (v['x'] as num).toDouble(),
-                                              (v['y'] as num).toDouble()))
-                                          ?.toList() ??
-                                      [],
-                                  path: shape['path'],
-                                  style: shape['style'],
-                                  strokeWidth:
-                                      (shape['strokeWidth'] as num).toDouble(),
-                                  color: _hexToColor(shape['color']),
-                                  fadeInRange: (shape['fadeInRange'] as List)
-                                      .map<double>((v) => (v as num).toDouble())
-                                      .toList(),
-                                ))),
-                        labels: List<GeometryLabel>.from(widget
-                            .feed.videoJson['instructions']['drawing']['labels']
-                            .map((label) => GeometryLabel(
-                                  id: label['id'],
-                                  text: label['text'],
-                                  position: Offset(
-                                      (label['position']['x'] as num)
-                                          .toDouble(),
-                                      (label['position']['y'] as num)
-                                          .toDouble()),
-                                  color: _hexToColor(label['color']),
-                                  fadeInRange: (label['fadeInRange'] as List)
-                                      .map<double>((v) => (v as num).toDouble())
-                                      .toList(),
-                                  drawingCommands: label['handwritten'] == true
-                                      ? generateHandwrittenCommands(
-                                          label['text'],
-                                          Offset(
-                                              (label['position']['x'] as num)
-                                                  .toDouble(),
-                                              (label['position']['y'] as num)
-                                                  .toDouble()))
-                                      : null,
-                                ))),
-                        speechScript: widget.feed.videoJson['instructions']
-                                ['speech']['script'] ??
-                            '',
-                        speechPacing: (widget.feed.videoJson['instructions']
-                                        ['speech']['pacing']
-                                    as Map<String, dynamic>? ??
-                                {})
-                            .map((key, value) =>
-                                MapEntry(key, (value as num).toDouble())),
+                        stages: List<DrawingStage>.from(
+                          (instructions['timing'] ?? []).map((stage) {
+                            debugPrint(
+                                '[VideoFeedItem] Processing stage: ${stage['stage']}');
+                            return DrawingStage(
+                              stage: stage['stage'],
+                              startTime: (stage['startTime'] as num).toDouble(),
+                              endTime: (stage['endTime'] as num).toDouble(),
+                              description: stage['description'],
+                              easing: stage['easing'],
+                            );
+                          }),
+                        ),
+                        shapes: List<GeometryShape>.from(
+                          (drawing['shapes'] ?? []).map((shape) {
+                            debugPrint(
+                                '[VideoFeedItem] Processing shape: ${shape['id']}');
+                            return GeometryShape(
+                              id: shape['id'],
+                              vertices: shape['vertices']
+                                      ?.map<Offset>((v) => Offset(
+                                          (v['x'] as num).toDouble(),
+                                          (v['y'] as num).toDouble()))
+                                      ?.toList() ??
+                                  [],
+                              path: shape['path'],
+                              style: shape['style'],
+                              strokeWidth:
+                                  (shape['strokeWidth'] as num).toDouble(),
+                              color: _hexToColor(shape['color']),
+                              fadeInRange: (shape['fadeInRange'] as List)
+                                  .map<double>((v) => (v as num).toDouble())
+                                  .toList(),
+                            );
+                          }),
+                        ),
+                        labels: List<GeometryLabel>.from(
+                          (drawing['labels'] ?? []).map((label) {
+                            debugPrint(
+                                '[VideoFeedItem] Processing label: ${label['id']}');
+                            return GeometryLabel(
+                              id: label['id'],
+                              text: label['text'],
+                              position: Offset(
+                                (label['position']['x'] as num).toDouble(),
+                                (label['position']['y'] as num).toDouble(),
+                              ),
+                              color: _hexToColor(label['color']),
+                              fadeInRange: (label['fadeInRange'] as List)
+                                  .map<double>((v) => (v as num).toDouble())
+                                  .toList(),
+                              drawingCommands: label['handwritten'] == true
+                                  ? generateHandwrittenCommands(
+                                      label['text'],
+                                      Offset(
+                                        (label['position']['x'] as num)
+                                            .toDouble(),
+                                        (label['position']['y'] as num)
+                                            .toDouble(),
+                                      ),
+                                    )
+                                  : null,
+                            );
+                          }),
+                        ),
+                        speechScript: instructions['speech']?['script'] ?? '',
+                        speechPacing: Map<String, double>.from(
+                          (instructions['speech']?['pacing'] ?? {}).map(
+                            (key, value) =>
+                                MapEntry(key, (value as num).toDouble()),
+                          ),
+                        ),
                       ),
                     ),
                     size: Size.infinite,
