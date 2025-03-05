@@ -66,7 +66,7 @@ class GptService {
               ],
             ),
           ],
-          temperature: 0.7,
+          temperature: 0.5, // Lower temperature for more precise spatial planning
           maxTokens: 500,
         );
         final jsonStr =
@@ -81,7 +81,8 @@ class GptService {
                 {"text": prompt}
               ]
             }
-          ]
+          ],
+          "generationConfig": {"temperature": 0.5, "topP": 0.95, "topK": 10} // Lower temperature for more precise planning
         };
 
         final uri = Uri.parse(_geminiEndpoint)
@@ -121,6 +122,11 @@ class GptService {
 
 Topic: $topic
 
+⚠️ SCREEN SIZE CONSTRAINTS ⚠️
+You are designing for a SMALL PHONE SCREEN that is exactly 320 pixels wide × 568 pixels tall.
+All content must fit within these bounds with 10px margins (effective area: 10-310 pixels horizontally).
+Keep your design SIMPLE - use at most 3-4 shapes and short, concise text that will fit on this small screen.
+
 This topic is part of a K-5 math curriculum. Create content that uses SPECIFIC, CONCRETE math examples - not abstract meta-lessons about learning.
 
 IMPORTANT:
@@ -128,13 +134,16 @@ IMPORTANT:
 2. DO create videos that teach actual math with specific numbers, equations, and concrete examples
 3. AVOID phrases like "Let's try option A... Now let's try option B" or "Remember to persevere"
 4. INSTEAD use real math problems like "If Sarah has 5 apples and gives 2 to John, how many does she have left?"
+5. Keep all text SHORT - each character takes 20px width, and anything over 15 characters won't fit properly
+6. Avoid complex shapes or diagrams that require detailed labeling
 
-Your goal is to teach through CONCRETE examples using numbers, shapes, and mathematical operations that are directly applicable.
+Your goal is to teach through CONCRETE examples using simple numbers, basic shapes, and concise text that will fit on a small phone screen.
 
 Return a concise description of the final drawing we want and the teaching script. Include:
 1. Specific math concept with NUMBERS and CONCRETE examples (not abstract meta-learning)
-2. List of shapes with approximate coordinates, colors, and labeling ideas
-3. 2-3 sentence teaching script summary that demonstrates solving an actual math problem
+2. List of SIMPLE shapes with approximate coordinates, colors, and short labeling ideas
+3. 2-3 BRIEF sentence teaching script that demonstrates solving a simple math problem
+4. Remember all content must fit on a 320×568 pixel screen with enough spacing
 
 Output as a simple JSON with "layoutDescription" and "teachingFocus" fields only. No additional text or commentary.''';
 
@@ -143,6 +152,26 @@ Output as a simple JSON with "layoutDescription" and "teachingFocus" fields only
       // Now use the layout description for the main drawing prompt
       final drawingPrompt =
           '''Your topic is ${layoutDescription['layoutDescription']}
+
+⚠️ X-COORDINATE BOUNDARY WARNING ⚠️
+You are drawing on a phone screen that is EXACTLY 320 pixels wide by 568 pixels tall.
+ALL x-coordinates in ALL shapes and labels MUST stay within 10-310 range (with 10px margins on both sides).
+ANY point with x < 10 or x > 310 will be CLIPPED and NOT VISIBLE to the user.
+
+HORIZONTAL SPACE CHECK:
+- Before creating ANY path or label, check its rightmost x-coordinate
+- If a shape or text would extend beyond x=310, you MUST reduce its size or reposition it
+- For handwritten text, remember width = (number of characters × 20px)
+- ALWAYS set "handwritten": true for ALL labels containing numbers, math symbols, or text
+- NEVER use plain text labels - EVERYTHING should be handwritten
+- Example: "345 + 678" is 9 characters, requiring 9×20 = 180px horizontal space
+- If positioning this at x=200, the right edge would be at x=380, exceeding the boundary
+- SOLUTION: Move starting position to x=60 so it ends at x=240 (within bounds)
+- ALWAYS calculate: startX + (numberOfChars × 20) ≤ 310
+- For MULTI-LINE TEXT: Create separate label objects for each line, positioned at the same x but different y-coordinates
+- NEVER try to create multi-line text in a single label - it will NOT render correctly
+
+Organize your drawing in 4 horizontal sections.
 
 CRITICALLY IMPORTANT: Create a lesson that teaches ACTUAL MATH with SPECIFIC NUMBERS and CONCRETE EXAMPLES. 
 DO NOT create abstract meta-lessons about "how to solve problems" or "multiple ways to think about math."
@@ -155,12 +184,27 @@ For K-5 math students:
 
 You are an AI that generates perfect JSON output (with no additional text or explanations) to instruct Flutter's CustomPainter on how to draw and label mathematical concepts in a context-aware manner. Follow these rules precisely:
 1. JSON-Only Output Your response must be a single, valid JSON object. It must contain no extra text, commentary, or Markdown formatting. Do not wrap it in triple backticks, do not provide any explanation—only the JSON.
-2. Context-Aware of a 320×568 Grid
+2. Context-Aware of a 320×568 Grid with Horizontal Sections
     * Assume a coordinate system sized for an iPhone SE (1st gen) screen, 320 points wide by 568 points high.
-    * All coordinates must ensure shapes and labels fit comfortably within this space.
+    * CRITICAL: ALL x-coordinates must stay within 0-320 range with at least 10px padding from edges (so effective range is 10-310)
+    * The screen must be organized into 4 horizontal sections:
+      - Section 1: y=0 to y=142 (top quarter)
+      - Section 2: y=143 to y=284 (second quarter)
+      - Section 3: y=285 to y=426 (third quarter)
+      - Section 4: y=427 to y=568 (bottom quarter)
+    * You must explicitly assign each shape and label to ONE specific section
+    * Each section should contain a complete part of the explanation (not partial concepts)
+    * For each element you add, calculate its space requirements:
+      - Shapes: Calculate based on the min/max y-values in the path commands
+      - Handwritten text: Each character needs 35px×20px space
+      - EXAMPLE CALCULATION: The label "5 + 7 = 12" has 9 characters including spaces. 
+        Width = 9 chars × 20px = 180px, Height = 35px. This leaves 320-180 = 140px horizontal space remaining.
+    * Track the remaining space in each section as you add elements
+    * If a section won't fit an element, use the next section instead
+    * Do not place more than 2 shapes or 3 labels in a single section
     * Place shapes and labels so they do not overlap each other, unless layering is intentional
-    * If multiple shapes exist, they should each occupy unique or well-arranged areas, respecting the shapes that are already drawn. For example, if you draw an angle near x=100,y=300, ensure labels for that angle are placed clearly away from crossing lines or other shapes.
-    * Be aware that each handwritten letter/number is about 35px high and 20 px wide. Take this into consideration when calculating vertical and horizontal space.
+    * Each handwritten letter/number is exactly 35px high and 20px wide
+    * Always leave at least 15px margins from all screen edges
 3. Flutter CustomPainter Instructions Only
     * All drawing commands must be specified as Flutter path operations (e.g., "moveTo(x, y)", "lineTo(x, y)", "quadraticBezierTo(x1, y1, x2, y2)").
     * No SVG or HTML. No extraneous placeholders like <path> or <svg>.
@@ -243,14 +287,26 @@ You are an AI that outputs a single JSON object with instructions for Flutter's 
    - "position" { "x":..., "y":... }
    - "color" (hex)
    - "fadeInRange" [start, end]
-   - "handwritten" true
-   - ***Place label positions so they do not overlap shapes or lines.***
+   - "handwritten": true (REQUIRED FOR ALL LABELS - no exceptions)
+   - ***IMPORTANT: For ALL text, numbers, math symbols, we use "handwritten": true***
+   - ***Position labels so they don't exceed the right edge (x=310) when accounting for full text width***
+   - ***VERIFY all label positions with the formula: x_position + (text.length × 20) ≤ 310***
 
-5) Be context-aware of a 320x568 grid:
-   - Arrange shapes so they do not overlap unless intended.
-   - Place labels near the shape but avoid crossing lines.
-   - Don't place anything off-screen (x < 0 or x > 320 or y < 0 or y > 568).
-   - Be aware that each letter is about 35px high and 20 px wide. Take this into consideration when calculating vertical and horizontal space.
+5) Advanced spatial awareness with horizontal sections:
+   - Plan your entire layout before generating any paths
+   - ALWAYS stay within screen bounds: x must be 10-310 (never outside this range)
+   - Organize content following the 4 horizontal sections defined above
+   - For handwritten text, calculate exact space needed: total width = (# characters × 20px)
+   - For each shape, determine which section it belongs to based on y-coordinates
+   - Track used and available space as you build the drawing:
+     * Start with 4 empty sections
+     * For each element, calculate its height and width
+     * Assign it to the appropriate section
+     * Update the remaining available space
+     * If insufficient space, move to next section
+   - Keep related elements (shapes and their labels) in the same section
+   - Leave 15px minimum margins from all screen edges
+   - Ensure sufficient space between elements (15px min vertical spacing)
 
 6) Provide a "speech" object with:
    - "script" explaining a CONCRETE math problem with SPECIFIC NUMBERS:
@@ -274,6 +330,14 @@ You are an AI that outputs a single JSON object with instructions for Flutter's 
 
 10) Output only the JSON object, with no extra text or explanation.
 
+11) FINAL CHECK BEFORE OUTPUTTING: 
+    - Verify ALL x-coordinates in ALL paths and labels are within 10-310 range
+    - Check EVERY label to ensure it has "handwritten": true
+    - For EACH label, verify: position.x + (text.length × 20) ≤ 310
+    - Any coordinate outside 10-310 range will create an invalid drawing that will be CLIPPED
+    - Any text without "handwritten": true will NOT display properly
+    - TRIPLE CHECK all text positioning to ensure nothing extends beyond the right edge
+
 ===END OF REQUIREMENTS===
 
 Now produce the JSON instructions that depict the concept of YOUR_TOPIC_HERE in a hand-drawn style, ensuring each shape is drawn progressively, labeled clearly, and fully visible on the 320x568 grid.''';
@@ -290,7 +354,7 @@ Now produce the JSON instructions that depict the concept of YOUR_TOPIC_HERE in 
               ],
             ),
           ],
-          temperature: 1,
+          temperature: 0.7, // Lowered for more precise spatial planning
           maxTokens: 2000,
         );
         final jsonStr =
@@ -306,7 +370,7 @@ Now produce the JSON instructions that depict the concept of YOUR_TOPIC_HERE in 
               ]
             }
           ],
-          "generationConfig": {"temperature": 1.7, "topP": 0.8, "topK": 40}
+          "generationConfig": {"temperature": 0.7, "topP": 0.9, "topK": 20} // Lower temperature for more precise spatial planning
         };
 
         final uri = Uri.parse(_geminiEndpoint)

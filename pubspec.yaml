@@ -30,6 +30,8 @@ dependencies:
   flutter_math_fork: ^0.7.3
   flutter_widget_from_html: ^0.15.3
   flutter_tts: ^3.8.5
+  google_fonts: ^6.1.0
+  uuid: ^4.3.3
   
 
 dev_dependencies:

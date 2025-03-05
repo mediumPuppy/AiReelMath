@@ -76,21 +76,61 @@ class _PathVideoFeedState extends State<_PathVideoFeed> {
 
     if (widget.selectedPath == null) {
       return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(
-              'Select a Learning Path',
-              style: Theme.of(context).textTheme.headlineSmall,
-            ),
-            const SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: () {
-                Navigator.pushNamed(context, '/learning_paths');
-              },
-              child: const Text('Browse Learning Paths'),
-            ),
-          ],
+        child: Container(
+          padding: const EdgeInsets.all(24),
+          margin: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.1),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.explore_rounded,
+                size: 80,
+                color: Theme.of(context).colorScheme.secondary,
+              ),
+              const SizedBox(height: 24),
+              Text(
+                'Choose Your Math Adventure!',
+                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'Select a learning path to start watching fun math videos',
+                style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                      color: Colors.black87,
+                    ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 32),
+              ElevatedButton.icon(
+                onPressed: () {
+                  Navigator.pushNamed(context, '/learning_paths');
+                },
+                icon: const Icon(Icons.map_rounded),
+                label: const Text('Browse Learning Paths'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Theme.of(context).colorScheme.secondary,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+                ),
+              ),
+            ],
+          ),
         ),
       );
     }
@@ -112,38 +152,88 @@ class _PathVideoFeedState extends State<_PathVideoFeed> {
 
         if (videos.isEmpty) {
           return Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(
-                  Icons.celebration,
-                  size: 64,
-                  color: Theme.of(context).colorScheme.primary,
+            child: Container(
+              padding: const EdgeInsets.all(28),
+              margin: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(24),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.1),
+                    blurRadius: 16,
+                    offset: const Offset(0, 6),
+                  ),
+                ],
+                border: Border.all(
+                  color: Theme.of(context).colorScheme.tertiary.withOpacity(0.3),
+                  width: 2,
                 ),
-                const SizedBox(height: 16),
-                Text(
-                  'Congratulations!',
-                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                        color: Theme.of(context).colorScheme.primary,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      Container(
+                        width: 100,
+                        height: 100,
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).colorScheme.secondary.withOpacity(0.2),
+                          shape: BoxShape.circle,
+                        ),
                       ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'You\'ve completed all topics in this learning path.',
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                        color: Colors.white,
+                      Icon(
+                        Icons.celebration_rounded,
+                        size: 80,
+                        color: Theme.of(context).colorScheme.secondary,
                       ),
-                ),
-                const SizedBox(height: 24),
-                ElevatedButton.icon(
-                  onPressed: () {
-                    Navigator.pushNamed(context, '/learning_paths');
-                  },
-                  icon: const Icon(Icons.explore),
-                  label: const Text('Explore New Learning Paths'),
-                ),
-              ],
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+                  Text(
+                    'Amazing Job! 🎉',
+                    style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                          color: Theme.of(context).colorScheme.primary,
+                          fontWeight: FontWeight.bold,
+                        ),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'You\'ve mastered all topics in this learning path!',
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          color: Colors.black87,
+                          fontWeight: FontWeight.w500,
+                        ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Ready for a new challenge?',
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.bodyLarge,
+                  ),
+                  const SizedBox(height: 32),
+                  ElevatedButton.icon(
+                    onPressed: () {
+                      Navigator.pushNamed(context, '/learning_paths');
+                    },
+                    icon: const Icon(Icons.explore),
+                    label: const Text('Find New Adventures'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Theme.of(context).colorScheme.tertiary,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+                      textStyle: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
           );
         }
@@ -190,22 +280,47 @@ class _PathVideoFeedState extends State<_PathVideoFeed> {
                   // Detect last video by comparing index with total count
                   if (index == videos.length - 1)
                     Positioned(
-                      bottom: 16,
-                      left: 16,
-                      right: 16,
-                      child: ElevatedButton(
-                        onPressed: () {
-                          print('[VideoFeed] Create new video button clicked');
-                          _FeedScreenState? feedScreenState = context
-                              .findAncestorStateOfType<_FeedScreenState>();
-                          if (feedScreenState != null) {
-                            feedScreenState._handleCreateNewVideo();
-                          } else {
-                            print(
-                                '[VideoFeed] ERROR: Could not find FeedScreenState');
-                          }
-                        },
-                        child: const Text('Create new video?'),
+                      bottom: 24,
+                      left: 20,
+                      right: 20,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(16),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Theme.of(context).colorScheme.primary.withOpacity(0.3),
+                              blurRadius: 12,
+                              offset: const Offset(0, 4),
+                            ),
+                          ],
+                        ),
+                        child: ElevatedButton.icon(
+                          onPressed: () {
+                            print('[VideoFeed] Create new video button clicked');
+                            _FeedScreenState? feedScreenState = context
+                                .findAncestorStateOfType<_FeedScreenState>();
+                            if (feedScreenState != null) {
+                              feedScreenState._handleCreateNewVideo();
+                            } else {
+                              print(
+                                  '[VideoFeed] ERROR: Could not find FeedScreenState');
+                            }
+                          },
+                          icon: const Icon(Icons.video_library_rounded),
+                          label: const Text('Create New Math Video!'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Theme.of(context).colorScheme.primary,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                            textStyle: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                          ),
+                        ),
                       ),
                     ),
                 ],
